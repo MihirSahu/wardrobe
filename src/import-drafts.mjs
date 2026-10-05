@@ -2,7 +2,7 @@ export function defaultDraft(job) {
   const metadata = job.metadata || {};
   return {
     boundingBox: metadata.boundingBox || { x: 0, y: 0, width: 1000, height: 1000 },
-    generateModeled: false,
+    generateModeled: true,
     name: metadata.name || "New piece",
     part: metadata.part || "upperbody",
     color: metadata.color || "#d8d0c2",

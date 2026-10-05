@@ -64,7 +64,7 @@ function ReviewEditor({ job, stage, draft, setDraft, regenPrompt, setRegenPrompt
           </>
         ) : <p className="import-card__detail">Approve this editorial image to attach it to the new wardrobe piece, or regenerate it with a more specific direction.</p>}
         {isCrop && <fieldset className="crop-fields"><legend>Crop bounds (0–1000)</legend>{["x", "y", "width", "height"].map((key) => <label key={key}>{key}<input type="number" min={key === "width" || key === "height" ? 1 : 0} max="1000" value={draft.boundingBox[key]} onChange={(e) => setDraft({ ...draft, boundingBox: { ...draft.boundingBox, [key]: Number(e.target.value) } })} /></label>)}</fieldset>}
-        {isGarment && <label className="check-field"><input type="checkbox" disabled={!hasReference} checked={draft.generateModeled} onChange={(e) => setDraft({ ...draft, generateModeled: e.target.checked })} />Also generate a modeled photo{!hasReference && " (add a reference in Settings)"}</label>}
+        {isGarment && <label className="check-field"><input type="checkbox" disabled={!hasReference} checked={Boolean(hasReference && draft.generateModeled)} onChange={(e) => setDraft({ ...draft, generateModeled: e.target.checked })} />Also generate a modeled photo{!hasReference && " (add a reference in Settings)"}</label>}
         {!isCrop && <label className="text-button file-button">Upload replacement<input type="file" accept="image/*" disabled={busy} onChange={(e) => { const file = e.target.files[0]; e.target.value = ""; if (file) onAction("upload", file); }} /></label>}
         {!isCrop && <div className="import-field import-regenerate-field">
           <label htmlFor={`regenerate-${job.id}-${stage}`}>Regeneration direction <span>optional</span></label>
@@ -200,7 +200,7 @@ export function WardrobeImportFlow({ onGarmentApproved, onModeledApproved }) {
           if (stage === "crop") reviewedAssetUrl = saved.stages.crop.assetUrl;
         }
         if (action === "preview") { await refresh(); return; }
-        result = await request(`${API}/${job.id}/stages/${stage}/${action}`, { method: "POST", body: { prompt: value || "", generateModeled: draft.generateModeled, ...(action === "approve" ? { reviewedAssetUrl } : {}) } });
+        result = await request(`${API}/${job.id}/stages/${stage}/${action}`, { method: "POST", body: { prompt: value || "", generateModeled: Boolean(setup?.hasModelReference && draft.generateModeled), ...(action === "approve" ? { reviewedAssetUrl } : {}) } });
       }
       if (result.record) { onGarmentApproved?.(result.record); if (stage === "modeled") onModeledApproved?.(job.id, result.record.modeledImage); }
       setPrompts((current) => ({ ...current, [`${job.id}:${stage}`]: "" })); await refresh();

@@ -18,12 +18,12 @@ test("pristine import fields follow remote metadata and crop changes", () => {
 test("refresh preserves locally edited fields while updating untouched fields", () => {
   const initial = refreshDrafts([job()], empty());
   initial.drafts.import.name = "Unsaved local name";
-  initial.drafts.import.generateModeled = true;
+  initial.drafts.import.generateModeled = false;
   const boundingBox = { x: 20, y: 30, width: 700, height: 800 };
   let next = refreshDrafts([job({ name: "Remote name", boundingBox })], initial);
   next = refreshDrafts([job({ name: "Another remote name", boundingBox, color: "#001122" })], next);
   assert.equal(next.drafts.import.name, "Unsaved local name");
-  assert.equal(next.drafts.import.generateModeled, true);
+  assert.equal(next.drafts.import.generateModeled, false);
   assert.deepEqual(next.drafts.import.boundingBox, boundingBox);
   assert.equal(next.drafts.import.color, "#001122");
 });
@@ -61,11 +61,11 @@ test("save acknowledgement preserves edits made while the save was pending", () 
   const initial = refreshDrafts([job()], empty());
   initial.drafts.import.name = "First local name";
   const submitted = structuredClone(initial.drafts.import);
-  initial.drafts.import.name = "Newer local name"; initial.drafts.import.generateModeled = true;
+  initial.drafts.import.name = "Newer local name"; initial.drafts.import.generateModeled = false;
   const saved = acknowledgeDraft(job({ name: "First local name" }), submitted, initial);
   const updated = refreshDrafts([job({ name: "Remote name", color: "#001122" })], saved);
   assert.equal(updated.drafts.import.name, "Newer local name");
-  assert.equal(updated.drafts.import.generateModeled, true);
+  assert.equal(updated.drafts.import.generateModeled, false);
   assert.equal(updated.drafts.import.color, "#001122");
   assert.deepEqual(acknowledgeDraft(job(), submitted, empty()), empty());
 });

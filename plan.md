@@ -89,7 +89,7 @@ The earlier manual-image requirement conflated two routes. The separate Sign in 
 2. Detect garments and suggest metadata and bounding boxes; let the user correct crops and details.
 3. Queue native Codex generation for each garment using its crop and reconstruction prompt; display progress in Wardrobe.
 4. Persist the generated cutout, run existing transparency/chroma cleanup where applicable, then let the user review and approve it.
-5. Optionally generate a modeled photo using the accepted garment and uploaded identity reference, then review and approve it.
+5. Generate a modeled photo using the accepted garment and uploaded identity reference, then review and approve it. Select this option by default when a reference is available; users can uncheck it, and imports without a reference remain cutout-only.
 6. Allow regeneration with user directions and optional replacement uploads. Importing a garment must not require an identity reference or modeled image.
 
 Allow manual metadata and crop entry when ChatGPT is disconnected. Keep source photos and durable job state while waiting for reconnection. The current API-key Images API must not run automatically.
