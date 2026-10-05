@@ -10,7 +10,7 @@ export const clothesSchema = object({ items: { type: "array", maxItems: 8, items
   boundingBox: object({ x: { type: "integer", minimum: 0, maximum: 999 }, y: { type: "integer", minimum: 0, maximum: 999 }, width: { type: "integer", minimum: 1, maximum: 1000 }, height: { type: "integer", minimum: 1, maximum: 1000 } }),
 }) } });
 export const outfitsSchema = object({ outfits: { type: "array", minItems: 1, maxItems: 12, items: object({
-  name: { ...text, minLength: 1, maxLength: 120 }, garmentIds: { type: "array", minItems: 2, maxItems: 5, uniqueItems: true, items: { type: "string", maxLength: 100 } },
+  name: { ...text, minLength: 1, maxLength: 120 }, garmentIds: { type: "array", minItems: 2, maxItems: 5, items: { type: "string", maxLength: 100 } },
   reason: text, setting: text, occasion: { type: "array", maxItems: 5, items: { type: "string", maxLength: 80 } },
 }) } });
 const ajv = new Ajv();
@@ -25,6 +25,8 @@ export function validateOutfits(value, inventory, count, existing = []) {
   const records = new Map(inventory.map((item) => [item.id, item]));
   const combinations = new Set(existing.map((o) => [...o.garmentIds].sort().join("|")));
   for (const outfit of value.outfits) {
+    // Structured Outputs does not support uniqueItems; enforce uniqueness locally.
+    if (new Set(outfit.garmentIds).size !== outfit.garmentIds.length) throw fail("Each outfit must use distinct garment IDs", 422);
     const counts = {};
     for (const id of outfit.garmentIds) {
       const item = records.get(id); if (!item) throw fail("Outfit references a missing garment", 422);
