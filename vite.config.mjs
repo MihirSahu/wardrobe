@@ -1,10 +1,8 @@
-import { defineConfig, loadEnv } from "vite";
+import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import { wardrobeImportApi } from "./scripts/import-job-api.mjs";
 import { responsiveImageApi } from "./scripts/responsive-image-api.mjs";
 
-export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), "");
+export default defineConfig(() => {
   return {
     optimizeDeps: {
       include: ["react", "react-dom/client"],
@@ -12,6 +10,7 @@ export default defineConfig(({ mode }) => {
     server: {
       host: "0.0.0.0",
       allowedHosts: ["terminal.local"],
+      proxy: { "/api": { target: "http://127.0.0.1:3000", changeOrigin: false } },
       warmup: {
         clientFiles: ["./src/main.jsx"],
       },
@@ -21,6 +20,6 @@ export default defineConfig(({ mode }) => {
       port: 4173,
       allowedHosts: ["localhost"],
     },
-    plugins: [react(), responsiveImageApi(), wardrobeImportApi({ env })],
+    plugins: [react(), responsiveImageApi()],
   };
 });

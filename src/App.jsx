@@ -2,9 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check, Plus, Trash, X } from "@phosphor-icons/react";
 import { WardrobeImportFlow } from "./import-flow.jsx";
 import { OptimizedImage } from "./OptimizedImage.jsx";
-
-const STORAGE_KEY = "open-wardrobe-edits-v1";
-const DELETED_STORAGE_KEY = "open-wardrobe-deleted-v1";
+import { Settings } from "./Settings.jsx";
+import { Outfits } from "./Outfits.jsx";
+import { request, uploadPhoto, useWardrobeEvents, useRefreshGate } from "./api.js";
+import { acknowledgeItemDraft, itemDraft, itemDraftPatch, refreshItemDraft } from "./item-drafts.mjs";
+import "./workspace.css";
 
 const TYPES = [
   { id: "all", label: "All" },
@@ -18,48 +20,6 @@ const TYPES = [
 const TYPE_MAP = Object.fromEntries(TYPES.map((type) => [type.id, type]));
 const TYPE_ORDER = Object.fromEntries(TYPES.slice(1).map((type, index) => [type.id, index]));
 
-
-function readEdits() {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
-  } catch {
-    return {};
-  }
-}
-
-
-function persistEdit(item) {
-  const edits = readEdits();
-  edits[item.id] = {
-    name: item.name || "",
-    part: item.part,
-    color: item.color || null,
-    secondaryColor: item.secondaryColor || null,
-    tags: item.tags || [],
-  };
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(edits));
-}
-
-function removePersistedEdit(id) {
-  const edits = readEdits();
-  delete edits[id];
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(edits));
-}
-
-function readDeletedItems() {
-  try {
-    const value = JSON.parse(localStorage.getItem(DELETED_STORAGE_KEY) || "[]");
-    return new Set(Array.isArray(value) ? value : []);
-  } catch {
-    return new Set();
-  }
-}
-
-function persistDeletedItem(id) {
-  const deleted = readDeletedItems();
-  deleted.add(id);
-  localStorage.setItem(DELETED_STORAGE_KEY, JSON.stringify([...deleted]));
-}
 
 function rgbToHex(red, green, blue) {
   return `#${[red, green, blue].map((value) => Math.max(0, Math.min(255, value)).toString(16).padStart(2, "0")).join("")}`;
@@ -343,9 +303,12 @@ function ItemViewer({ item, onClose, onSave, onDelete }) {
   const [sampling, setSampling] = useState(null);
   const [sampleStatus, setSampleStatus] = useState("");
   const [palette, setPalette] = useState(item.palette || []);
-  const [draft, setDraft] = useState({ name: item.name || "", part: item.part, color: item.color || "#9a9286", secondaryColor: item.secondaryColor || null, tags: [...(item.tags || [])] });
+  const [editState, setEditState] = useState(() => ({ draft: itemDraft(item), baseline: itemDraft(item) }));
+  const draft = editState.draft;
+  const setDraft = useCallback((update) => setEditState((current) => ({ ...current, draft: typeof update === "function" ? update(current.draft) : update })), []);
   const [shaking, setShaking] = useState(false);
   const [closeBlocked, setCloseBlocked] = useState(false);
+  const [saving, setSaving] = useState(false);
   const type = TYPE_MAP[item.part]?.singular || "Wardrobe item";
   const hasModeledImage = Boolean(item.modeledImage);
   const pieceRotation = useMemo(() => {
@@ -353,22 +316,7 @@ function ItemViewer({ item, onClose, onSave, onDelete }) {
     return `${(hash % 9) - 4}deg`;
   }, [item.id]);
 
-  const isDirty = useMemo(() => {
-    const normalizedTags = (tags) => tags.map((tag) => tag.trim()).filter(Boolean);
-    return JSON.stringify({
-      name: draft.name.trim(),
-      part: draft.part,
-      color: draft.color?.toLowerCase() || null,
-      secondaryColor: draft.secondaryColor?.toLowerCase() || null,
-      tags: normalizedTags(draft.tags),
-    }) !== JSON.stringify({
-      name: (item.name || "").trim(),
-      part: item.part,
-      color: item.color?.toLowerCase() || null,
-      secondaryColor: item.secondaryColor?.toLowerCase() || null,
-      tags: normalizedTags(item.tags || []),
-    });
-  }, [draft, item]);
+  const isDirty = useMemo(() => Object.keys(itemDraftPatch(draft, editState.baseline)).length > 0, [draft, editState.baseline]);
 
   const nudgeUnsaved = useCallback(() => {
     setCloseBlocked(true);
@@ -411,20 +359,24 @@ function ItemViewer({ item, onClose, onSave, onDelete }) {
     setSampling(null);
     setSampleStatus("");
     setPalette(item.palette || []);
-    setDraft({ name: item.name || "", part: item.part, color: item.color || "#9a9286", secondaryColor: item.secondaryColor || null, tags: [...(item.tags || [])] });
+    setEditState((current) => refreshItemDraft(item, current));
   }, [item]);
 
   const cancelEditing = () => {
-    setDraft({ name: item.name || "", part: item.part, color: item.color || "#9a9286", secondaryColor: item.secondaryColor || null, tags: [...(item.tags || [])] });
+    setDraft(itemDraft(item));
     setSampling(null);
     setSampleStatus("");
     onClose();
   };
 
-  const saveEditing = () => {
-    onSave({ ...item, ...draft, name: draft.name.trim(), tags: draft.tags.map((tag) => tag.trim()).filter(Boolean) });
-    setSampling(null);
-    setSampleStatus("Changes saved.");
+  const saveEditing = async () => {
+    if (saving) return;
+    setSaving(true);
+    const submitted = draft;
+    const saved = await onSave(item.id, itemDraftPatch(submitted, editState.baseline));
+    if (saved) { setEditState((current) => ({ draft: acknowledgeItemDraft(saved, submitted, current.draft), baseline: itemDraft(saved) })); setSampling(null); setSampleStatus("Changes saved."); }
+    else setSampleStatus("Could not save. Your draft is still here; try again.");
+    setSaving(false);
   };
 
   const handleImageLoad = (event) => {
@@ -512,6 +464,15 @@ function ItemViewer({ item, onClose, onSave, onDelete }) {
           setSampling={setSampling}
           sampleStatus={sampleStatus}
         />
+        <div className="button-row">
+          <button className="text-button" disabled={saving} onClick={async () => {
+            setSaving(true); try { await request(`/api/import/wardrobe/${item.id}/generate-modeled`, { method: "POST" }); setSampleStatus("Modeled photo queued. Review it in Imports when ready."); } catch (e) { setSampleStatus(e.message); } finally { setSaving(false); }
+          }}>{hasModeledImage ? "Regenerate modeled photo" : "Generate modeled photo"}</button>
+          {["garment", "modeled"].map((stage) => <label className="text-button file-button" key={stage}>Replace {stage === "garment" ? "cutout" : "modeled photo"}<input type="file" accept="image/*" disabled={saving} onChange={async (e) => {
+            const file = e.target.files[0]; e.target.value = ""; if (!file) return;
+            setSaving(true); try { await uploadPhoto(`/api/import/wardrobe/${item.id}/${stage}`, file); setSampleStatus("Photo saved."); } catch (error) { setSampleStatus(error.message); } finally { setSaving(false); }
+          }} /></label>)}
+        </div>
 
         {closeBlocked && <p className="unsaved-notice" role="status">Save or cancel changes before closing.</p>}
 
@@ -521,8 +482,8 @@ function ItemViewer({ item, onClose, onSave, onDelete }) {
           </button>
           <span className="action-spacer" />
           <button className="secondary-button" type="button" onClick={cancelEditing}>Cancel</button>
-          <button className="primary-button" type="button" onClick={saveEditing}>
-            <Check size={15} weight="bold" aria-hidden="true" /> Save
+          <button className="primary-button" type="button" disabled={saving} onClick={saveEditing}>
+            <Check size={15} weight="bold" aria-hidden="true" /> {saving ? "Saving…" : "Save"}
           </button>
         </div>
       </div>
@@ -533,27 +494,25 @@ function ItemViewer({ item, onClose, onSave, onDelete }) {
 }
 
 export function App() {
+  const [page, setPage] = useState("wardrobe");
   const [items, setItems] = useState([]);
   const [activeType, setActiveType] = useState("all");
   const [selectedId, setSelectedId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const refreshGate = useRefreshGate();
 
-  useEffect(() => {
-    fetch("/api/import/wardrobe", { cache: "no-store" })
-      .then((response) => {
-        if (!response.ok) throw new Error("Could not load the wardrobe.");
-        return response.json();
-      })
-      .then((loadedItems) => {
-        const edits = readEdits();
-        const deleted = readDeletedItems();
-        const visibleItems = loadedItems.filter((item) => !deleted.has(item.id));
-        setItems(visibleItems.map((item) => ({ ...item, ...(edits[item.id] || {}) })));
-      })
-      .catch((requestError) => setError(requestError.message))
-      .finally(() => setLoading(false));
-  }, []);
+  const refresh = useCallback(async () => {
+    const current = refreshGate.begin();
+    try {
+      const loaded = await request("/api/import/wardrobe");
+      if (!current()) return;
+      setItems((current) => loaded.map((item) => { const prior = current.find((i) => i.id === item.id); return prior && JSON.stringify(prior) === JSON.stringify(item) ? prior : item; }));
+      setError("");
+    } catch (e) { if (current()) setError(e.message); } finally { if (current()) setLoading(false); }
+  }, [refreshGate]);
+  useEffect(() => { refresh(); }, [refresh]);
+  useWardrobeEvents(refresh);
 
   const selectedItem = items.find((item) => item.id === selectedId) || null;
 
@@ -573,39 +532,42 @@ export function App() {
     setSelectedId(null);
   };
 
-  const saveItem = (updatedItem) => {
-    setItems((current) => current.map((item) => item.id === updatedItem.id ? updatedItem : item));
-    persistEdit(updatedItem);
+  const saveItem = async (id, metadata) => {
+    try {
+      const saved = await request(`/api/import/wardrobe/${id}`, { method: "PATCH", body: { metadata } });
+      refreshGate.invalidate();
+      setItems((current) => current.map((item) => item.id === saved.id ? saved : item)); setError(""); void refresh(); return saved;
+    } catch (e) { setError(e.message); return false; }
   };
 
   const deleteItem = async (id) => {
-    if (id.startsWith("import-")) {
-      try {
-        const response = await fetch(`/api/import/wardrobe/${id}`, { method: "DELETE" });
-        if (!response.ok && response.status !== 404) throw new Error("Could not delete the imported item.");
-      } catch (requestError) {
-        setError(requestError.message);
-        return;
-      }
+    try {
+      await request(`/api/import/wardrobe/${id}`, { method: "DELETE" });
+    } catch (requestError) {
+      setError(requestError.message); return;
     }
-    setItems((current) => current.filter((item) => item.id !== id));
-    removePersistedEdit(id);
-    persistDeletedItem(id);
+    refreshGate.invalidate(); setItems((current) => current.filter((item) => item.id !== id));
     setSelectedId(null);
+    void refresh();
   };
 
   const addImportedItem = useCallback((newItem) => {
-    setItems((current) => current.some((item) => item.id === newItem.id) ? current : [...current, newItem]);
-  }, []);
+    refreshGate.invalidate();
+    setItems((current) => current.some((item) => item.id === newItem.id) ? current.map((item) => item.id === newItem.id ? newItem : item) : [...current, newItem]);
+    void refresh();
+  }, [refreshGate, refresh]);
 
   const attachImportedModeledImage = useCallback((jobId, modeledImage) => {
+    refreshGate.invalidate();
     const id = `import-${jobId}`;
     setItems((current) => current.map((item) => item.id === id ? { ...item, modeledImage } : item));
-  }, []);
+    void refresh();
+  }, [refreshGate, refresh]);
 
   return (
     <div className={`app-shell${selectedItem ? " has-selection" : ""}`}>
-      <main className="gallery-pane">
+      <nav className="workspace-nav" aria-label="Wardrobe navigation"><a className="wordmark" href="#" onClick={(e) => { e.preventDefault(); setPage("wardrobe"); }}>Wardrobe<span>Personal collection</span></a><div className="workspace-tabs">{[["wardrobe", "Pieces"], ["outfits", "Outfits"], ["settings", "Settings"]].map(([id, label]) => <button key={id} className={page === id ? "active" : ""} onClick={() => { setPage(id); setSelectedId(null); }} aria-current={page === id ? "page" : undefined}>{label}</button>)}</div><button className="scan-button" onClick={() => window.dispatchEvent(new Event("wardrobe:scan"))}><Plus size={17} /> Scan clothes</button></nav>
+      {page === "settings" ? <Settings onMigrated={refresh} /> : page === "outfits" ? <Outfits items={items} /> : <main className="gallery-pane">
         <header className="gallery-header">
           <div className="gallery-meta-row">
             <p className="piece-count">{items.length} {items.length === 1 ? "piece" : "pieces"}</p>
@@ -641,7 +603,7 @@ export function App() {
             ))}
           </section>
         )}
-      </main>
+      </main>}
 
       {selectedItem && <ItemViewer item={selectedItem} onClose={() => setSelectedId(null)} onSave={saveItem} onDelete={deleteItem} />}
       <WardrobeImportFlow onGarmentApproved={addImportedItem} onModeledApproved={attachImportedModeledImage} />

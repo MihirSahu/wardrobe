@@ -22,7 +22,11 @@ export const OptimizedImage = forwardRef(function OptimizedImage({
 }, ref) {
   const normalizedSource = sourcePath(src);
 
-  if (!normalizedSource || normalizedSource.startsWith("data:") || normalizedSource.startsWith("blob:") || normalizedSource.startsWith("/api/")) {
+  if (normalizedSource?.startsWith("/api/")) {
+    const variants = breakpoints.map((width) => `${src}${src.includes("?") ? "&" : "?"}w=${width} ${width}w`).join(", ");
+    return <img ref={ref} src={src} srcSet={variants} alt={alt} sizes={sizes} loading={loading || (priority ? "eager" : "lazy")} decoding={decoding || "async"} {...props} />;
+  }
+  if (!normalizedSource || normalizedSource.startsWith("data:") || normalizedSource.startsWith("blob:")) {
     return <img ref={ref} src={src} alt={alt} sizes={sizes} loading={loading || (priority ? "eager" : "lazy")} decoding={decoding || "async"} {...props} />;
   }
 

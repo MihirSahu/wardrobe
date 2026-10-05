@@ -1,8 +1,43 @@
+# Dependencies and generated build/test output
 node_modules/
 dist/
-.DS_Store
+/package-lock.json
+coverage/
+.nyc_output/
+.cache/
+*.tsbuildinfo
+playwright-report/
+test-results/
+blob-report/
+smoke-output/
+
+# Local configuration, credentials, and private wardrobe files
 .env
 .env.*
 !.env.example
-*.log
+.envrc
+/.aws/
+/.codex/
+/secrets/
+/auth.json
+/credentials.json
+/credentials.csv
+*accessKeys.csv
+*.pem
+*.key
+*.p12
+*.pfx
 data/
+.state/
+
+# Local logs, editor backups, and operating-system metadata
+*.log
+*.tmp
+*.bak
+*.orig
+*.rej
+*.swp
+*.swo
+*~
+.DS_Store
+._*
