@@ -49,31 +49,23 @@ export class Backup extends EventEmitter {
     this.status = { configured: Boolean(bucket && region), running: false, pendingChanges: true, lastSuccess: null, error: null };
     this.onChange = () => { this.status.pendingChanges = true; this.emit("change"); }; store.on("change", this.onChange);
   }
-  async init({ schedule = true } = {}) {
+  async init() {
     this.stateDir = await stateDirectory(this.stateDir, this.store.root);
     const saved = await readJson(path.join(this.stateDir, "status.json"), {});
     const destination = { bucket: this.bucket || null, region: this.region || null };
     if (saved.destination?.bucket === destination.bucket && saved.destination?.region === destination.region) Object.assign(this.status, saved);
     Object.assign(this.status, { destination, configured: Boolean(this.bucket && this.region), running: false, pendingChanges: true });
-    if (schedule) {
-      // Check every minute; attempt at most hourly, including after restart or failure.
-      this.timer = setInterval(() => {
-        const sinceAttempt = Date.now() - Date.parse(this.status.lastAttempt || 0);
-        const sinceSuccess = Date.now() - Date.parse(this.status.lastSuccess || 0);
-        if (this.status.configured && !this.status.running && (!this.status.lastAttempt || sinceAttempt >= 3_600_000) && (this.status.pendingChanges || !this.status.lastSuccess || sinceSuccess >= 86_400_000)) void this.trigger(false).catch(() => {});
-      }, 60_000); this.timer.unref();
-    }
     return this;
   }
   async saveStatus() { await atomicJson(path.join(this.stateDir, "status.json"), this.status); this.emit("change"); }
-  trigger(force = true) {
+  trigger() {
     if (this.task) return this.task;
     if (!this.status.configured) { this.status.error = "Set S3_BACKUP_BUCKET and AWS_REGION to enable backups"; this.log("backup", "unavailable", { error: this.status.error }); this.emit("change"); return Promise.reject(fail(this.status.error, 503)); }
     this.status.running = true; this.status.progress = "Preparing snapshot"; this.status.lastAttempt = now(); this.emit("change");
-    this.log("backup", "started", { force });
-    this.task = this.snapshot(force).finally(() => { this.task = null; }); return this.task;
+    this.log("backup", "started");
+    this.task = this.snapshot().finally(() => { this.task = null; }); return this.task;
   }
-  async snapshot(force) {
+  async snapshot() {
     let staging;
     try {
       staging = await mkdtemp(path.join(this.stateDir, "snapshot-"));
@@ -81,10 +73,6 @@ export class Backup extends EventEmitter {
       let revision;
       const files = await this.store.lock(async () => { revision = this.store.revision; return tree(this.store.root, copy); });
       const hash = fingerprint(files);
-      if (!force && hash === this.status.fingerprint && Date.now() - Date.parse(this.status.lastSuccess) < 86_400_000) {
-        this.log("backup", "unchanged");
-        this.status.pendingChanges = revision !== this.store.revision; this.status.running = false; this.status.progress = null; await this.saveStatus(); return this.status;
-      }
       this.status.progress = "Compressing complete data directory"; this.emit("change");
       this.log("backup", "compressing");
       const archive = path.join(staging, "archive.tar.gz");
@@ -119,7 +107,7 @@ export class Backup extends EventEmitter {
     } while (token);
     return snapshots.sort((a, b) => b.id.localeCompare(a.id));
   }
-  async close() { clearInterval(this.timer); this.store.off("change", this.onChange); await this.task?.catch(() => {}); }
+  async close() { this.store.off("change", this.onChange); await this.task?.catch(() => {}); }
 }
 
 export async function verifyExtract(archive, manifest, destination) {

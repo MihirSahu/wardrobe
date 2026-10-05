@@ -17,7 +17,7 @@ export async function application({ root = process.cwd(), dataDir = path.join(ro
   for (const name of ["codex", "scratch", "receipts", "backup"]) await stateDirectory(path.join(stateDir, name), store.root);
   const codex = providedCodex || new Codex({ stateDir, binary: process.env.CODEX_BINARY || path.join(root, "node_modules/.bin/codex"), log });
   const jobs = await new Jobs(store, codex, stateDir, log).init();
-  const backup = await new Backup(store, { stateDir, log, ...backupOptions }).init({ schedule: backupOptions.schedule ?? true });
+  const backup = await new Backup(store, { stateDir, log, ...backupOptions }).init();
   const api = createApi({ store, codex, jobs, backup, log });
   const dist = path.join(root, "dist");
   const ipx = createIPXNodeServer(createIPX({ storage: ipxFSStorage({ dir: [path.join(root, "public"), dist] }) }));

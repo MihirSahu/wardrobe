@@ -38,7 +38,7 @@ export function Settings({ onMigrated }) {
         <label className="secondary-button file-button">{settings?.hasModelReference ? "Replace reference" : "Upload reference"}<input type="file" accept="image/*,.heic,.heif" disabled={busy} onChange={(e) => { const file = e.target.files[0]; e.target.value = ""; if (file) perform(async () => { setUploadProgress(0); try { await uploadPhoto("/api/reference", file, { onProgress: setUploadProgress }); } finally { setUploadProgress(null); } }); }} /></label>
         {uploadProgress !== null && <p role="status">Uploading {uploadProgress}%</p>}
       </article>
-      <article className="settings-card"><h2>Complete S3 backups</h2><p>Every file under data/ is included. Backups run hourly when changed and at least daily, with 30-day retention.</p>
+      <article className="settings-card"><h2>Complete S3 backups</h2><p>Every file under data/ is included. Backups run only when you choose Back up now, with 30-day retention configured in S3.</p>
         <dl className="backup-details"><dt>Last successful backup</dt><dd>{settings?.backup?.lastSuccess ? new Date(settings.backup.lastSuccess).toLocaleString() : "No backup yet"}</dd><dt>Changes</dt><dd>{settings?.backup?.pendingChanges ? "Awaiting backup" : "Backed up"}</dd></dl>
         {!settings?.backup?.configured && <p>Backups are not configured on this server yet.</p>}
         {settings?.backup?.error && <p className="inline-error">{settings.backup.error}</p>}

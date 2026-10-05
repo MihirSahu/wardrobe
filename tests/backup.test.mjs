@@ -7,10 +7,37 @@ import { fixture, MemoryS3 } from "./helpers.mjs";
 import { Store } from "../server/store.mjs";
 import { Backup, tree, restore, verifyExtract, sha256 } from "../server/backup.mjs";
 
+test("backups require a manual trigger after startup, changes, elapsed time and restart", async (t) => {
+  t.mock.timers.enable({ apis: ["setInterval", "Date"], now: Date.parse("2026-01-01T00:00:00Z") });
+  const root = await fixture(t); const store = await new Store(path.join(root, "data")).init(); const client = new MemoryS3();
+  const options = { stateDir: path.join(root, "state"), bucket: "test", region: "us-east-1", client };
+  const backup = await new Backup(store, options).init(); t.after(() => backup.close());
+  const assertIdle = (service, count) => {
+    t.mock.timers.tick(48 * 3_600_000);
+    assert.equal(service.status.running, false);
+    assert.equal(client.calls.length, count);
+  };
+  assertIdle(backup, 0);
+  await store.lock(() => store.write("settings.json", { changed: true }));
+  assertIdle(backup, 0);
+  assert.equal(backup.status.pendingChanges, true);
+  await backup.trigger(); assert.equal(client.calls.length, 2);
+  assert.equal(backup.status.pendingChanges, false);
+  assertIdle(backup, 2);
+  await backup.close();
+  const restarted = await new Backup(store, options).init(); t.after(() => restarted.close());
+  assertIdle(restarted, 2);
+  await restarted.trigger();
+  assert.equal(client.calls.length, 4);
+  assert.equal((await restarted.snapshots()).length, 2);
+  await restarted.trigger();
+  assert.equal((await restarted.snapshots()).length, 3);
+});
+
 test("full snapshots preserve hidden files, unknown extensions, empty directories, jobs, JSON, DBs and images", async (t) => {
   const root = await fixture(t); const store = await new Store(path.join(root, "data")).init();
   await store.lock(async () => { await mkdir(store.file("empty")); await store.asset(".hidden", Buffer.from("hidden")); await store.asset("database.db", Buffer.from("database bytes")); await store.asset("imported/image.png", Buffer.from("image bytes")); await store.asset("unknown.xyz", Buffer.from("unknown")); });
-  const client = new MemoryS3(); const backup = await new Backup(store, { stateDir: path.join(root, "state"), bucket: "test", region: "us-east-1", client }).init({ schedule: false }); t.after(() => backup.close());
+  const client = new MemoryS3(); const backup = await new Backup(store, { stateDir: path.join(root, "state"), bucket: "test", region: "us-east-1", client }).init(); t.after(() => backup.close());
   await backup.trigger(); assert.equal(backup.status.pendingChanges, false);
   const [snapshot] = await backup.snapshots(); assert.ok(snapshot.id);
   const destination = path.join(root, "restored");
@@ -22,7 +49,7 @@ test("full snapshots preserve hidden files, unknown extensions, empty directorie
 });
 test("failed archives never become recoverable; unsupported links fail explicitly", async (t) => {
   const root = await fixture(t); const store = await new Store(path.join(root, "data")).init(); const client = new MemoryS3();
-  const backup = await new Backup(store, { stateDir: path.join(root, "state"), bucket: "test", region: "us-east-1", client }).init({ schedule: false }); t.after(() => backup.close());
+  const backup = await new Backup(store, { stateDir: path.join(root, "state"), bucket: "test", region: "us-east-1", client }).init(); t.after(() => backup.close());
   await symlink("../outside", store.file("bad-link"));
   await assert.rejects(backup.trigger(), /Unsupported filesystem entry/); assert.equal((await backup.snapshots()).length, 0); assert.ok(backup.status.error);
   await unlink(store.file("bad-link"));
@@ -48,17 +75,17 @@ test("restore verifies archive digest and rejects links even with a matching arc
 test("a new backup destination does not inherit the previous bucket's successful snapshot", async (t) => {
   const root = await fixture(t); const store = await new Store(path.join(root, "data")).init(); const client = new MemoryS3();
   const options = { stateDir: path.join(root, "state"), region: "us-east-1", client };
-  const first = await new Backup(store, { ...options, bucket: "first" }).init({ schedule: false });
+  const first = await new Backup(store, { ...options, bucket: "first" }).init();
   await first.trigger(); await first.close(); const count = client.calls.filter((c) => c === "PutObjectCommand").length;
-  const second = await new Backup(store, { ...options, bucket: "second" }).init({ schedule: false }); t.after(() => second.close());
+  const second = await new Backup(store, { ...options, bucket: "second" }).init(); t.after(() => second.close());
   assert.equal(second.status.lastSuccess, null);
-  await second.trigger(false);
+  await second.trigger();
   assert.equal(client.calls.filter((c) => c === "PutObjectCommand").length, count + 2);
 });
 
 test("backup staging is removed even when saving backup status fails", async (t) => {
   const root = await fixture(t); const store = await new Store(path.join(root, "data")).init();
-  const backup = await new Backup(store, { stateDir: path.join(root, "state"), bucket: "test", region: "us-east-1", client: new MemoryS3() }).init({ schedule: false }); t.after(() => backup.close());
+  const backup = await new Backup(store, { stateDir: path.join(root, "state"), bucket: "test", region: "us-east-1", client: new MemoryS3() }).init(); t.after(() => backup.close());
   backup.saveStatus = async () => { throw new Error("Simulated status write failure"); };
   await assert.rejects(backup.trigger(), /status write failure/);
   assert.deepEqual((await readdir(backup.stateDir)).filter((name) => name.startsWith("snapshot-")), []);

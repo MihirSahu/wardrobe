@@ -2,7 +2,7 @@
 
 A private, self-hosted wardrobe for your phone and desktop. Scan clothing, review transparent cutouts, create outfits, and generate modeled photos using your ChatGPT account through Codex app-server. No OpenAI API key or Codex desktop is required.
 
-Originals, metadata, JSON records, generated images, and jobs live in `data/`. The backup scheduler snapshots **every file and directory beneath `data/`**, including unknown extensions and hidden files, to S3. Local data remains the source of truth.
+Originals, metadata, JSON records, generated images, and jobs live in `data/`. Manual backups snapshot **every file and directory beneath `data/`**, including unknown extensions and hidden files, to S3. Local data remains the source of truth.
 
 ## Docker Compose
 
@@ -20,7 +20,7 @@ docker compose up --build -d
 docker compose logs -f wardrobe
 ```
 
-Open port 3000 on your existing private server connection. Compose creates one `wardrobe` container: the Node HTTP server, durable AI queue, managed Codex app-server subprocess, and backup scheduler. `./data` mounts at `/app/data`; `wardrobe_state` stores credentials and operational checkpoints outside backups. The image supports Linux ARM64 and AMD64; building on the target host selects its architecture.
+Open port 3000 on your existing private server connection. Compose creates one `wardrobe` container: the Node HTTP server, durable AI queue, managed Codex app-server subprocess, and manual backup service. `./data` mounts at `/app/data`; `wardrobe_state` stores credentials and operational checkpoints outside backups. The image supports Linux ARM64 and AMD64; building on the target host selects its architecture.
 
 In **Settings → Connect ChatGPT**, open OpenAI's device-code sign-in page and enter the displayed code. Complete sign-in using your YubiKey in the browser. The app never asks for your security-key PIN. Codex manages credentials across container restarts; reconnect if the session expires or is revoked. Select an available model in Settings. There is no automatic API-key or paid-provider fallback.
 
@@ -167,7 +167,7 @@ This creates a **new** bucket with all four public-access blocks, disabled ACLs,
 
 ### Backup behavior
 
-Backups run hourly when changed, at least daily when unchanged, and through **Settings → Back up now**. Staging copies hold the same lock as all app writes; compression and upload release it. Large archives use multipart upload. Every regular file and empty directory is included. Unsupported entries, including symbolic links, fail the backup explicitly rather than being skipped or followed outside the root. Stop external scripts that write to `data/` during a snapshot.
+Backups run only through **Settings → Back up now** (or an explicit `POST /api/backup` request). Startup, data changes, and elapsed time do not trigger backups. Each manual request creates a complete snapshot even if the data is unchanged; overlapping requests share the backup already in progress. Staging copies hold the same lock as all app writes; compression and upload release it. Large archives use multipart upload. Every regular file and empty directory is included. Unsupported entries, including symbolic links, fail the backup explicitly rather than being skipped or followed outside the root. Stop external scripts that write to `data/` during a snapshot.
 
 Snapshots have an archive and completion manifest with per-file SHA-256 hashes and the archive digest. Completion is uploaded last; incomplete uploads do not appear in the snapshot list. S3 outages do not stop local wardrobe use. Staging and status stay outside `data/`.
 

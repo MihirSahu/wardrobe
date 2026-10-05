@@ -34,7 +34,7 @@ test("startup rejects each operational child alias into data", async (t) => {
 test("external state aliases stay usable and backup staging is canonical and outside data", async (t) => {
   const root = await fixture(t); const target = path.join(root, "external-state");
   await mkdir(target); const alias = path.join(root, "state-link"); await symlink(target, alias);
-  const app = await application({ root, stateDir: alias, codex: new FakeCodex(root), backupOptions: { bucket: "", region: "us-east-1", schedule: false } });
+  const app = await application({ root, stateDir: alias, codex: new FakeCodex(root), backupOptions: { bucket: "", region: "us-east-1" } });
   t.after(() => app.close());
   assert.equal(app.backup.stateDir, await realpath(path.join(target, "backup")));
   assert.equal(inside(app.store.root, app.backup.stateDir), false);
@@ -49,6 +49,6 @@ test("direct Backup use also rejects staging aliases into data", async (t) => {
   await symlink(store.root, path.join(stateDir, "backup"));
   const backup = new Backup(store, { stateDir, bucket: "test", region: "us-east-1" });
   t.after(() => backup.close());
-  await assert.rejects(backup.init({ schedule: false }), /must be separate/);
+  await assert.rejects(backup.init(), /must be separate/);
   assert.equal((await readdir(store.root)).some((name) => name.startsWith("snapshot-")), false);
 });

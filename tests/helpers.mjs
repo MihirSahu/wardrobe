@@ -39,7 +39,7 @@ export class FakeCodex extends EventEmitter {
 }
 export async function testApp(t, options = {}) {
   const root = await fixture(t); const codex = new FakeCodex(root);
-  const app = await application({ root, codex, log: options.log, backupOptions: { ...options.backupOptions, schedule: false } });
+  const app = await application({ root, codex, log: options.log, backupOptions: options.backupOptions });
   await new Promise((resolve) => app.server.listen(0, "127.0.0.1", resolve));
   t.after(() => app.close());
   const base = `http://127.0.0.1:${app.server.address().port}`;

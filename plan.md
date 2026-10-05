@@ -13,7 +13,7 @@ Turn Wardrobe into a self-hosted app for browsing, importing clothes, and creati
 - Keep local storage as the source of truth and back up the entire `data/` directory to a new S3 bucket, including all JSON/database files, images, and job state. A backup must restore the complete wardrobe, not just its image files.
 - Target ChatGPT subscription usage for garment detection, outfit suggestions, cutouts, and modeled photos through the native ChatGPT-authenticated Codex runtime, without an OpenAI API key or Codex desktop.
 - Generate images automatically from Wardrobe and present them for review and approval. Manual ChatGPT generation/upload is no longer the required workflow. Use headless native Codex app-server as the selected approach and validate real image generation in the target Docker environment as the first implementation milestone.
-- Deploy one long-running `wardrobe` container through Docker Compose. It contains the Node server, a managed Codex app-server subprocess, and the backup scheduler.
+- Deploy one long-running `wardrobe` container through Docker Compose. It contains the Node server, a managed Codex app-server subprocess, and the manual backup service.
 - Exclude selectable data folders, app authentication, and network-access setup, per the revised requirements. Existing server access remains an external deployment prerequisite.
 - ChatGPT sign-in must support accounts using Advanced Account Security and YubiKey authentication. Authenticate on OpenAI's own browser page; do not implement security-key authentication inside Wardrobe.
 
@@ -110,7 +110,7 @@ Provide a separate provisioning command that creates a new bucket using explicit
 - Use the AWS SDK credential chain; keep AWS credentials outside `data/` and the frontend.
 - Back up every file and directory beneath `data/`, including `library.json`, outfit manifests, job JSON, any database files, metadata, identity references, uploaded originals, crops, garment cutouts, modeled photos, outfit images, thumbnails, and additional files. Do not use an image-only allowlist or silently omit unexpected entries; report unsupported filesystem entries rather than following links outside the data root.
 - Keep all authoritative wardrobe records and assets under `data/` so a complete snapshot is sufficient to restore the wardrobe. The current JSON store remains in use; if replaced with a database later, use its supported consistent-backup mechanism rather than copying an active database file unsafely.
-- Default to hourly backups when data changed, a daily snapshot even when unchanged, and a "Back up now" action.
+- Trigger backups only through the "Back up now" action or an explicit backup API request. Startup, data changes, and elapsed time must not trigger backups; each manual request creates a complete snapshot even when unchanged.
 - Create a consistent staging copy while holding the application's data-write lock. Compress and upload after releasing the lock. All application writes must use the same lock; external writers must be stopped during snapshots.
 - Store each snapshot under a unique ID, with an archive and manifest containing file paths, sizes, and SHA-256 checksums. Upload the completion manifest last; list only completed snapshots as recoverable.
 - Keep staging files and backup status outside `data/`. Prevent overlapping backups and retry transient failures with bounded backoff.
