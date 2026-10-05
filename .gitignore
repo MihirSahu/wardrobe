@@ -14,6 +14,8 @@ smoke-output/
 # Local configuration, credentials, and private wardrobe files
 .env
 .env.*
+*.env
+*.env.*
 !.env.example
 .envrc
 /.aws/

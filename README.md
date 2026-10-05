@@ -26,6 +26,34 @@ In **Settings → Connect ChatGPT**, open OpenAI's device-code sign-in page and 
 
 This follows the selected private, single-owner, noncommercial deployment assumption. Native headless image generation still requires the live smoke test below on the target runtime; a successful account connection alone does not establish image-generation support.
 
+## Test Docker locally
+
+Start Docker Desktop. Finish pending imports and stop `sfw pnpm dev` before the first run so the copy of `data/` is consistent. The test runner reads your existing Git-ignored `.env`; no credentials belong in `compose.test.yaml` or the script.
+
+```sh
+./scripts/container-test.sh up
+./scripts/container-test.sh ps
+./scripts/container-test.sh health
+./scripts/container-test.sh logs
+```
+
+Open <http://localhost:3001>. The first `up` copies the entire wardrobe into `.state/container-test/data`; later runs reuse that copy, preserving test edits. The test container has a separate persistent ChatGPT credentials volume, so connect once in Settings. It uses your current reference photo from the data copy. The original `data/` and local Codex credentials remain separate. **Back up now** uploads this test wardrobe to the bucket configured in `.env`.
+
+Options go before the command; additional arguments after the command are forwarded to Compose:
+
+```sh
+./scripts/container-test.sh --port 3002 up
+./scripts/container-test.sh --env-file /absolute/path/to/test.env up
+./scripts/container-test.sh --empty up # Empty wardrobe on first initialization
+./scripts/container-test.sh logs --tail 100
+./scripts/container-test.sh restart
+./scripts/container-test.sh down
+```
+
+`up` builds the current code and waits for container health. `--empty` does not erase existing test data. `down` stops/removes the container while retaining data and login; avoid `down -v` if you want to retain the test login. Ctrl+C in `logs` only stops the log viewer. Use `--help` for `init`, `build`, `exec`, and `run` commands. For a one-off native image smoke test, stop the test container with `down` before using `run node scripts/smoke-images.mjs --source /app/data/YOUR_CLOTHING_PHOTO.png --reference /app/data/model-reference.jpeg`.
+
+Validate the browser workflows: existing images, camera upload from your phone, crop and cutout approval, modeled-photo generation, an outfit, and manual S3 backup. Recreate with `down` then `up` and confirm clothing, images, settings, and ChatGPT login persist. Stop the test with `down` afterward.
+
 ## Phone and browser workflow
 
 - **Scan clothes** opens the native camera. Preview, retake, then upload. **Choose photos** opens your photo library; drag/drop and paste work on desktop.
